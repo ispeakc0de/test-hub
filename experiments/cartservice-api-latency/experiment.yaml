@@ -1,0 +1,164 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  creationTimestamp: null
+  name: cartservice-api-latency
+  namespace: hce
+spec:
+  arguments:
+    parameters:
+    - name: adminModeNamespace
+      value: hce
+  entrypoint: cartservice-api-latency
+  podGC:
+    strategy: OnWorkflowCompletion
+  securityContext:
+    runAsGroup: 0
+    runAsNonRoot: true
+    runAsUser: 1000
+  serviceAccountName: argo-chaos
+  templates:
+  - inputs: {}
+    metadata: {}
+    name: cartservice-api-latency
+    outputs: {}
+    steps:
+    - - arguments: {}
+        name: pod-api-latency-7rt
+        template: pod-api-latency-7rt
+    - - arguments: {}
+        name: cleanup-chaos-resources
+        template: cleanup-chaos-resources
+  - container:
+      args:
+      - kubectl delete chaosengine -l workflow_run_id={{workflow.uid}} -n {{workflow.parameters.adminModeNamespace}}
+      command:
+      - sh
+      - -c
+      image: docker.io/harness/chaos-go-runner:1.38.0
+      name: ""
+      resources: {}
+    inputs: {}
+    metadata: {}
+    name: cleanup-chaos-resources
+    outputs: {}
+  - container:
+      args:
+      - -file=/tmp/chaosengine-pod-api-latency-7rt.yaml
+      - -saveName=/tmp/engine-name
+      command:
+      - ./chaos-checker
+      image: docker.io/harness/chaos-go-runner:1.38.0
+      name: ""
+      resources: {}
+    inputs:
+      artifacts:
+      - name: pod-api-latency-7rt
+        path: /tmp/chaosengine-pod-api-latency-7rt.yaml
+        raw:
+          data: |
+            apiVersion: litmuschaos.io/v1alpha1
+            kind: ChaosEngine
+            metadata:
+              namespace: "{{workflow.parameters.adminModeNamespace}}"
+              labels:
+                name: pod-api-latency
+                app.kubernetes.io/part-of: litmus
+                app.kubernetes.io/component: experiment-job
+                app.kubernetes.io/runtime-api-usage: "true"
+                app.kubernetes.io/version: ci
+                workflow_run_id: "{{ workflow.uid }}"
+                workflow_name: cartservice-api-latency
+              annotations:
+                probeRef: '[{"name":"system-probe","mode":"Edge"}]'
+              generateName: pod-api-latency-7rt
+            spec:
+              engineState: active
+              appinfo:
+                appns: boutique
+                applabel: app=cartservice
+                appkind: deployment
+              chaosServiceAccount: litmus-admin
+              experiments:
+                - name: pod-api-latency
+                  image: docker.io/harness/chaos-go-runner:1.38.1
+                  imagePullPolicy: Always
+                  args:
+                    - -c
+                    - ./experiments -name pod-api-latency
+                  command:
+                    - /bin/bash
+                  spec:
+                    components:
+                      env:
+                        - name: TARGET_CONTAINER
+                          value: ""
+                        - name: LIB_IMAGE
+                          value: docker.io/harness/chaos-go-runner:1.38.1
+                        - name: LATENCY
+                          value: 1s
+                        - name: TARGET_SERVICE_PORT
+                          value: "7070"
+                        - name: PROXY_PORT
+                          value: "20000"
+                        - name: NETWORK_INTERFACE
+                          value: eth0
+                        - name: TOTAL_CHAOS_DURATION
+                          value: "60"
+                        - name: RAMP_TIME
+                          value: ""
+                        - name: HTTPS_ENABLED
+                          value: ""
+                        - name: CUSTOM_CERTIFICATES
+                          value: ""
+                        - name: HTTPS_ROOT_CERT_PATH
+                          value: /etc/ssl/certs
+                        - name: HTTPS_ROOT_CERT_FILE_NAME
+                          value: ca-certificates.crt
+                        - name: DESTINATION_PORTS
+                          value: ""
+                        - name: PATH_FILTER
+                          value: cart
+                        - name: HEADERS_FILTERS
+                          value: ""
+                        - name: METHODS
+                          value: ""
+                        - name: QUERY_PARAMS
+                          value: ""
+                        - name: SOURCE_HOSTS
+                          value: ""
+                        - name: SOURCE_IPS
+                          value: ""
+                        - name: DESTINATION_HOSTS
+                          value: ""
+                        - name: DESTINATION_IPS
+                          value: ""
+                        - name: SERVICE_DIRECTION
+                          value: ingress
+                        - name: DATA_DIRECTION
+                          value: both
+                        - name: PODS_AFFECTED_PERC
+                          value: ""
+                        - name: TARGET_PODS
+                          value: ""
+                        - name: CONTAINER_RUNTIME
+                          value: containerd
+                        - name: SOCKET_PATH
+                          value: /run/containerd/containerd.sock
+                        - name: NODE_LABEL
+                          value: ""
+                        - name: SEQUENCE
+                          value: parallel
+                      securityContext:
+                        podSecurityContext:
+                          runAsUser: 2000
+                          runAsGroup: 0
+              jobCleanUpPolicy: delete
+    metadata:
+      labels:
+        weight: "10"
+    name: pod-api-latency-7rt
+    outputs: {}
+status:
+  finishedAt: null
+  startedAt: null
